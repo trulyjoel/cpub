@@ -1,0 +1,39 @@
+name: Publish Claude Code .deb
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Download latest claude-code .deb
+        id: download
+        run: |
+          set -euo pipefail
+          curl -fsSL https://downloads.claude.ai/keys/claude-code.asc -o claude-code.asc
+          gpg --show-keys --with-colons claude-code.asc | grep -qx 'fpr:::::::::31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE:'
+          sudo install -m 0644 claude-code.asc /etc/apt/keyrings/claude-code.asc
+          echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/latest latest main" \
+            | sudo tee /etc/apt/sources.list.d/claude-code.list
+          apt_opts=(-o Dir::Etc::sourcelist=/etc/apt/sources.list.d/claude-code.list -o Dir::Etc::sourceparts=-)
+          sudo apt-get update "${apt_opts[@]}"
+          apt-get download "${apt_opts[@]}" claude-code
+          deb=$(ls claude-code_*.deb)
+          echo "deb=$deb" >> "$GITHUB_OUTPUT"
+          echo "name=${deb%.deb}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ${{ steps.download.outputs.name }}
+          path: ${{ steps.download.outputs.deb }}
+          compression-level: 0
+          overwrite: true
